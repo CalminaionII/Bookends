@@ -64,6 +64,8 @@ Materials live in `config/bookends/materials.json`. Each has:
 |---|---|
 | `texture` | The texture painted on every face. |
 | `castable` | True lets the fired mold take this metal. |
+| `source` | Optional. The mod the metal belongs to, when its texture is in the game's domain (Pewter's is) - it then counts as that mod's: one pair of each design in the creative menu. Left out: the texture's domain. |
+| `handbookOnly` | Optional. True keeps the metal out of the creative menu but on the design pages in the handbook. |
 
 The name comes from `bookends:material-<code>`, else the game's own `material-<code>` (every vanilla metal has one), else the code. Add a material with a patch onto ours, or ship a file at the same path in your own mod - a later file with the same code changes that material. This is the pewter patch Bookends ships:
 
@@ -75,7 +77,7 @@ The name comes from `bookends:material-<code>`, else the game's own `material-<c
     "file": "bookends:config/bookends/materials.json",
     "dependsOn": [ { "modid": "pewter" } ],
     "value": [
-      { "code": "pewter", "texture": "game:item/resource/plate/pewter", "castable": true }
+      { "code": "pewter", "texture": "game:item/resource/plate/pewter", "castable": true, "source": "pewter" }
     ]
   }
 ]

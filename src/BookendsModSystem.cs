@@ -4,7 +4,9 @@ using System.Linq;
 using Newtonsoft.Json.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
+using Bookends.Handbook;
 
 namespace Bookends;
 
@@ -33,8 +35,17 @@ public sealed class BookendsModSystem : ModSystem
         api.RegisterBlockEntityClass("BookendsMoldFired", typeof(BEBookendMoldFired));
     }
 
+    public override void Dispose()
+    {
+        HandbookGroups.Remove();
+        base.Dispose();
+    }
+
     public override void StartClientSide(ICoreClientAPI capi)
     {
+        // one handbook page per design, cycling its sides and materials, plus the "Can be made with" line (both registered
+        // in AssetsFinalize). Tools/Materials Kit/src/HandbookGroups.cs - rerun install-kit.py --handbook-only to update it.
+        HandbookGroups.Apply(capi, "bookends.handbookgroups");
         // Atlas positions and uploaded meshes belong to the world being left.
         capi.Event.LeaveWorld += () => { BookendMesher.Clear(capi); ItemBookend.ClearPending(); };
         // The material textures go into the block atlas once - textures only, no models - so every
@@ -87,20 +98,47 @@ public sealed class BookendsModSystem : ModSystem
 
     /// <summary>
     /// The creative tab, built from the design and material files - so a design or metal another mod
-    /// adds shows up with no itemtype or patch of its own. Per design: the pair in wood, then in each
-    /// castable metal.
+    /// adds shows up with no itemtype or patch of its own. Per design: the pair in wood, then in each of the
+    /// game's castable metals, then in the first castable metal of each other mod (Calm, 2026-10-15: vanilla plus one
+    /// per mod - every metal still casts, the tab just does not list them all).
     /// </summary>
     public override void AssetsFinalize(ICoreAPI api)
     {
         var item = api.World.GetItem(BookendDesigns.ItemCode);
         if (item == null) return;
-        var materials = Materials.Values.Where(m => m.Code == "wood").Concat(Materials.Values.Where(m => m.Castable)).ToList();
+        var castable = Materials.Values.Where(m => m.Castable).ToList();
+        var materials = Materials.Values.Where(m => m.Code == "wood")
+            .Concat(castable.Where(m => m.SourceMod == "game" && !m.HandbookOnly))
+            .Concat(castable.Where(m => m.SourceMod != "game").GroupBy(m => m.SourceMod).Select(g => g.First())).ToList();
         var stacks = new List<JsonItemStack>();
         foreach (var design in Designs)
             foreach (var material in materials)
                 foreach (var side in BookendDesigns.Sides)
                     stacks.Add(Stack(item, new BookendData { Design = design.Code, Side = side, Material = material.Code }));
         item.CreativeInventoryStacks = [new CreativeTabAndStackList { Tabs = ["general", "decorative", "bookends"], Stacks = stacks.ToArray() }];
+        // every other castable metal on the design's page only
+        var pageOnly = new List<ItemStack>();
+        foreach (var design in Designs)
+            foreach (var material in castable.Where(m => !materials.Contains(m)))
+                foreach (var side in BookendDesigns.Sides)
+                    pageOnly.Add(Stack(item, new BookendData { Design = design.Code, Side = side, Material = material.Code }).ResolvedItemstack);
+        HandbookGroups.Register(item, stack => BookendData.Of(stack)?.Design ?? "",
+            stack => BookendData.Of(stack) is { } data ? Lang.Get("bookends:bookend-group", BookendDesigns.DesignName(data.Design)) : null,
+            pageOnly);
+        // the page says which metals it casts in (installed ones - a mod's metal joins by itself) and links the guide
+        // (Calm, 2026-10-16: "just want say what metals and link to the guide")
+        string MetalsText(ICoreClientAPI capi) => string.Join(", ", castable
+            .Select(m => BookendDesigns.MaterialName(m.Code)).Distinct().OrderBy(name => name));
+        HandbookGroups.AddSection(item, "bookends:handbook-metals-title", MetalsText);
+        HandbookGroups.AddSection(item, "bookends:handbook-guide-title", capi => Lang.Get("bookends:handbook-guide-text"));
+        // the blank and the molds (casting happens there) get the same sections (Calm, 2026-10-16: "Do all of those now")
+        foreach (var block in api.World.Blocks.Where(b => b?.Code?.Domain == "bookends"))
+        {
+            string path = block.Code.Path;
+            if (path.StartsWith("bookendmold-")) HandbookGroups.AddSection(block, "bookends:handbook-metals-title", MetalsText);
+            if (path == "bookendblank" || path.StartsWith("bookendmold-"))
+                HandbookGroups.AddSection(block, "bookends:handbook-guide-title", capi => Lang.Get("bookends:handbook-guide-text"));
+        }
     }
 
     private static JsonItemStack Stack(Item item, BookendData data)

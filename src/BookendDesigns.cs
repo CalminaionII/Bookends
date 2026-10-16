@@ -36,6 +36,23 @@ public sealed class BookendMaterialDefinition
     public string Code { get; set; }
     public string Texture { get; set; }
     public bool Castable { get; set; }
+
+    /// <summary>
+    /// The mod the material comes from, when its texture is in the game's domain but the game does not have it (Pewter
+    /// ships game:item/resource/plate/pewter). Left out = the texture's domain. Decides the creative tab (one stack per
+    /// mod) and the handbook's "Can be made with" line.
+    /// </summary>
+    public string Source { get; set; }
+
+    /// <summary>
+    /// true = on the handbook pages but not in the creative tab - the game's less common pourable metals (Calm, 2026-10-16:
+    /// "any metal that can be molten"), so the tab keeps its size. Casting is the same either way.
+    /// </summary>
+    public bool HandbookOnly { get; set; }
+
+    /// <summary>The mod id this material counts as: <see cref="Source"/>, else the texture's domain.</summary>
+    public string SourceMod => !string.IsNullOrEmpty(Source) ? Source
+        : Texture != null && Texture.Contains(':') ? Texture.Substring(0, Texture.IndexOf(':')) : "game";
 }
 
 /// <summary>
